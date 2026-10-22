@@ -3,8 +3,13 @@ import { pino } from 'pino'
 import postgres from 'postgres'
 import { CallRooms } from './call-rooms.ts'
 import { loadConfig } from './config.ts'
+import { Directory } from './directory.ts'
+import { Homeserver } from './homeserver.ts'
 import { createServer } from './http.ts'
 import { handleSignals } from './lifecycle.ts'
+import { Meet } from './meet.ts'
+import { OpenId } from './openid.ts'
+import { registerSfuGet } from './sfu-get.ts'
 
 // Readiness answers 503 this long before the server closes, so the load
 // balancer stops routing here first. Both fit the default 30 s grace period.
@@ -27,7 +32,8 @@ const connect = (max?: number) =>
 const sql = connect()
 // Its own connection: calls waiting for a Meet room may hold every one of the pool
 const probe = connect(1)
-await new CallRooms(sql).migrate()
+const callRooms = new CallRooms(sql)
+await callRooms.migrate()
 
 let accepting = false
 const server = createServer({
@@ -38,6 +44,25 @@ const server = createServer({
       probe`select 1`.then(() => accepting),
       delay(2000).then(() => false)
     ])
+})
+registerSfuGet(server, {
+  serverName: config.MATRIX_SERVER_NAME,
+  openId: new OpenId(config.MATRIX_HOMESERVER_URL),
+  homeserver: new Homeserver(config.MATRIX_HOMESERVER_URL, config.AS_TOKEN),
+  directory: new Directory({
+    url: config.LDAP_URL,
+    base: config.LDAP_BASE,
+    bindDn: config.LDAP_BIND_DN ?? null,
+    bindPassword: config.LDAP_BIND_PASSWORD ?? '',
+    uidAttribute: config.LDAP_UID_ATTRIBUTE
+  }),
+  meet: new Meet({
+    url: config.MEET_URL,
+    clientId: config.MEET_CLIENT_ID,
+    clientSecret: config.MEET_CLIENT_SECRET,
+    serviceAccountEmail: config.MEET_SERVICE_ACCOUNT_EMAIL
+  }),
+  callRooms
 })
 await server.listen({ host: config.HTTP_HOST, port: config.HTTP_PORT })
 
