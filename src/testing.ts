@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import Fastify, { type FastifyInstance } from 'fastify'
 import postgres from 'postgres'
 
 const SERVER_URL =
@@ -24,4 +25,14 @@ export async function createTestDb(): Promise<TestDb> {
       await server.end()
     }
   }
+}
+
+/** A fake upstream on a free port of the loopback: IPv4, as `localhost` may resolve to IPv6. */
+export async function startFake(
+  routes: (app: FastifyInstance) => void
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const app = Fastify()
+  routes(app)
+  const url = await app.listen({ host: '127.0.0.1', port: 0 })
+  return { url, close: () => app.close() }
 }
