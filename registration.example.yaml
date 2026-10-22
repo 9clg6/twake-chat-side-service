@@ -1,0 +1,20 @@
+# Synapse registration of the service (app_service_config_files).
+# The service uses as_token only (AS_TOKEN). Synapse requires an hs_token too:
+# any secret, the service never receives a request from Synapse.
+id: twake-chat-visio
+as_token: '<AS_TOKEN>'
+hs_token: '<another secret>'
+sender_localpart: _twake_chat_visio
+# No events
+url: null
+# The service calls the homeserver on every token request.
+rate_limited: false
+namespaces:
+  # Not exclusive: the service reads the power levels of a room as the caller.
+  users:
+    - exclusive: false
+      regex: '@.*'
+  aliases: []
+  rooms: []
+io.element.msc4502.scopes:
+  - 'urn:matrix:client:io.element.msc4502:rooms:is_joined'
