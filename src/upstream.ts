@@ -9,6 +9,14 @@ export class UpstreamError extends Error {
   }
 }
 
+/** A service the token depends on refuses this user: the caller gets a 403. */
+export class RefusedError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RefusedError'
+  }
+}
+
 /** The JSON body of an answer, or an `UpstreamError` that says which call failed. */
 export async function readJson(
   service: string,
