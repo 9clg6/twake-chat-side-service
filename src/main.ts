@@ -1,5 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { pino } from 'pino'
+import postgres from 'postgres'
+import { CallRooms } from './call-rooms.ts'
 import { loadConfig } from './config.ts'
 import { createServer } from './http.ts'
 import { handleSignals } from './lifecycle.ts'
@@ -16,10 +18,26 @@ const lifecycle = handleSignals({
   deadlineMs: SHUTDOWN_DEADLINE_MS
 })
 
+const connect = (max?: number) =>
+  postgres(config.DATABASE_URL, {
+    connect_timeout: 5,
+    onnotice: () => undefined,
+    ...(max && { max })
+  })
+const sql = connect()
+// Its own connection: calls waiting for a Meet room may hold every one of the pool
+const probe = connect(1)
+await new CallRooms(sql).migrate()
+
 let accepting = false
 const server = createServer({
   logger,
-  isReady: () => Promise.resolve(accepting)
+  // A database that holds the connection without answering is not ready either
+  isReady: () =>
+    Promise.race([
+      probe`select 1`.then(() => accepting),
+      delay(2000).then(() => false)
+    ])
 })
 await server.listen({ host: config.HTTP_HOST, port: config.HTTP_PORT })
 
@@ -28,4 +46,5 @@ lifecycle.started(async () => {
   accepting = false
   await delay(DRAIN_MS)
   await server.close()
+  await Promise.all([sql.end({ timeout: 5 }), probe.end({ timeout: 5 })])
 })
