@@ -65,12 +65,13 @@ export function withDeadline<T>(
 export async function call(
   service: string,
   url: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  timeoutMs = UPSTREAM_TIMEOUT_MS
 ): Promise<Response> {
   try {
     return await fetch(url, {
       ...init,
-      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeoutMs)
     })
   } catch (err) {
     throw new UpstreamError(
