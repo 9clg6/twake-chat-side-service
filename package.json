@@ -1,7 +1,7 @@
 {
-  "name": "twake-chat-visio-side-service",
+  "name": "twake-chat-side-service",
   "version": "0.1.0",
-  "description": "Matrix application service that issues Twake Chat call tokens through Meet",
+  "description": "Matrix application service of Twake Chat that issues the call tokens through Meet",
   "private": true,
   "license": "AGPL-3.0-only",
   "type": "module",

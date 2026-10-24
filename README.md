@@ -1,6 +1,7 @@
-# twake-chat-visio-side-service
+# twake-chat-side-service
 
-Matrix application service that issues Twake Chat call tokens through Meet.
+Matrix application service of Twake Chat. It issues the call tokens through
+Meet.
 Deploying it: [docs/deploy.md](docs/deploy.md).
 
 ## Development

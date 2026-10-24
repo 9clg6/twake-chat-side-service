@@ -9,7 +9,7 @@ token, in the Meet room of the Matrix room.
 ```mermaid
 sequenceDiagram
     participant C as Twake Chat
-    participant V as Visio side service
+    participant V as Twake Chat side service
     participant S as Synapse
     participant L as LDAP
     participant M as Meet
@@ -37,7 +37,7 @@ others as `member`. The LiveKit identity is `@user:server:device`.
 
 ## Image
 
-`ghcr.io/linagora/twake-chat-visio-side-service`, tagged `latest` from `main`
+`ghcr.io/linagora/twake-chat-side-service`, tagged `latest` from `main`
 and `X.Y.Z` from each release tag `vX.Y.Z`. Node 24; it runs as uid 1000 and
 works on a read-only root filesystem, and listens on port 8080. It logs JSON
 lines (pino): one per refused token and per failure.
@@ -62,7 +62,7 @@ All required unless a default is given.
 - `MATRIX_SERVER_NAME`: the server name of the homeserver, whose users only
   are served.
 - `DATABASE_URL`: the Postgres database, for example
-  `postgres://visio:secret@postgresql:5432/visio`.
+  `postgres://chat_side_service:secret@postgresql:5432/chat_side_service`.
 - `MEET_URL`: Meet, for example `https://meet.example.com`.
 - `MEET_CLIENT_ID`, `MEET_CLIENT_SECRET`: the application of the service in
   Meet.
@@ -145,5 +145,10 @@ experimental_features:
 
 - Synapse reads the registration at startup only: restart it after any
   change.
+- Only Synapse reads `id` and `sender_localpart`: a registration made with
+  other values, such as `twake-chat-visio`, keeps working. To rename it, edit
+  the file Synapse loads and restart it. Never list the old and the new file
+  together: Synapse refuses two registrations with the same `id` or
+  `as_token`.
 - The registration lets the `as_token` act as any local user (the `users`
   namespace is `@.*`). Keep it as secret as an admin token.
