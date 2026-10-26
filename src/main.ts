@@ -12,6 +12,8 @@ import { createServer } from './http.ts'
 import { handleSignals } from './lifecycle.ts'
 import { Meet } from './meet.ts'
 import { OpenId } from './openid.ts'
+import { registerPublicPages } from './public-pages.ts'
+import { RoomReader } from './room-reader.ts'
 import { registerSfuGet } from './sfu-get.ts'
 
 // Readiness answers 503 this long before the server closes, so the load
@@ -94,6 +96,15 @@ registerAssistants(server, {
       : null,
   rateLimit: new RateLimit(config.ASSISTANTS_REQUESTS_PER_MINUTE)
 })
+const { PUBLIC_PAGES_URL: publicUrl, CHAT_URL: chatUrl } = config
+if (publicUrl && chatUrl) {
+  registerPublicPages(server, {
+    reader: new RoomReader(config.MATRIX_HOMESERVER_URL, config.AS_TOKEN),
+    serverName: config.MATRIX_SERVER_NAME,
+    publicUrl,
+    chatUrl
+  })
+}
 await server.listen({ host: config.HTTP_HOST, port: config.HTTP_PORT })
 
 accepting = true

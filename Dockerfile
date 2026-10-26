@@ -15,6 +15,7 @@ WORKDIR /app
 COPY --from=deps /app/node_modules node_modules
 COPY package.json ./
 COPY --from=build /app/dist dist
+COPY templates templates
 USER 1000:1000
 EXPOSE 8080
 CMD ["node", "--import", "./dist/instrument.js", "dist/main.js"]
