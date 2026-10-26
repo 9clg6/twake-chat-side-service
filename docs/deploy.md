@@ -1,8 +1,9 @@
 # Deploying
 
 The service is the side service of Twake Chat: the MatrixRTC token service of
-its calls, and the relay of its assistants to twake-harness (see
-[Assistants](#assistants)). The client finds it in the client well-known and
+its calls, the relay of its assistants to twake-harness (see
+[Assistants](#assistants)), and the public web pages of its rooms open to all
+(see [Public pages](#public-pages)). The client finds it in the client well-known and
 calls `POST /sfu/get` on it directly, with an OpenID token of its homeserver.
 The service checks the token and the membership with the homeserver, then asks
 Meet for the LiveKit token, in the Meet room of the Matrix room.
@@ -58,6 +59,11 @@ override must keep the `--import`, or Sentry gets nothing.
   public as well, with a rate limit per user and replica (see
   [Assistants](#assistants)). The service checks the token with Synapse before
   that limit: set a limit per IP at the ingress too.
+- `GET /b/<ref>`, `GET /b/<ref>/media/<server>/<id>`, `GET /sitemap.xml`,
+  `GET /robots.txt`: the public pages, for visitors and crawlers without any
+  credential (see [Public pages](#public-pages)). They have no rate limit of
+  their own and a request may cost several reads of Synapse: a limit per IP at
+  the ingress is required before they are exposed.
 - Liveness: `GET /health/live`.
 - Readiness: `GET /health/ready`, 503 while Postgres does not answer within
   2 seconds.
@@ -91,6 +97,10 @@ All required unless a default is given.
   default (LemonLDAP-NG refuses a request without one).
 - `ASSISTANTS_REQUESTS_PER_MINUTE`: the assistant calls a user may make per
   minute and replica, 60 by default.
+- `PUBLIC_PAGES_URL`, `CHAT_URL`: both or none, to serve the public pages: the
+  public address of this service, for the links of the pages and the sitemap,
+  and the address of Twake Chat, where « React in Twake Chat » opens the room.
+  Without them, those routes answer 404.
 - `HTTP_HOST`, `HTTP_PORT`: `0.0.0.0` and 8080 by default.
 - `LOG_LEVEL`: `info` by default.
 - `SENTRY_DSN` (optional, secret) and `SENTRY_ENVIRONMENT` (optional): every
@@ -208,6 +218,32 @@ To serve them:
 - Its client id in `PROVISIONER_CLIENT_IDS` of the harness, which admits the
   provisioners by the subject of their token.
 - The network: the service reaches APISIX and the token endpoint.
+
+## Public pages
+
+A room has a read-only web page at `/b/<slug>` (its local alias) or
+`/b/<room id>` when anyone may read its history (`world_readable`) and join
+it (`public`), it is not encrypted, not a space, its owner turned the page on
+(`app.twake.chat.public_page`), and it is in the room directory. Any other
+answers 404. Decided in D388 and D398 of the decision log of Twake Chat.
+
+- The service reads the rooms as its own account (`sender_localpart`), never on
+  behalf of a user. The registration has no `rooms` namespace, so Synapse
+  serves it only what it serves anyone outside the room, event by event.
+- A page shows the 30 latest posts with the reactions of members, and the media
+  it shows only, up to 50 MiB each. It sends no script and keeps no state: each
+  replica keeps a page a minute and the sitemap five minutes.
+- Pages and media answer with `cache-control: public, max-age=60`. A page
+  turned off is still served for up to a minute by each replica, and a shared
+  cache (a CDN) may keep it the `max-age` more.
+- Each page names its one address in `<link rel="canonical">`. A link to it
+  encoded twice (`%253A` for `:`) is redirected there (301); a proxy in front
+  may hand the path on decoded or not, both answer.
+- The sitemap lists the rooms of the directory that pass the same checks.
+- Twake Chat links to the pages with its own `PUBLIC_PAGES_URL`, set to the
+  same address. D388 has it publish a room in the directory as its owner turns
+  the page on: the `room_list_publication_rules` of Synapse must let users
+  publish.
 
 ## LDAP
 
