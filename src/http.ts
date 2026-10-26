@@ -1,3 +1,4 @@
+import { genReqId } from '@linagora/twake-node-telemetry'
 import Fastify, {
   LogController,
   type FastifyReply,
@@ -87,7 +88,8 @@ export function createServer(deps: {
     ),
     logController: new LogController({
       disableRequestLogging: request => request.url.startsWith('/health/')
-    })
+    }),
+    genReqId
   })
 
   app.setErrorHandler(

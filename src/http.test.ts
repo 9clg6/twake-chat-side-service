@@ -31,6 +31,18 @@ describe('createServer', () => {
     ])
   })
 
+  it("takes the request id from the caller's X-Request-Id", async () => {
+    const app = server()
+    app.get('/id', request => ({ id: request.id }))
+
+    const response = await app.inject({
+      url: '/id',
+      headers: { 'x-request-id': 'from-proxy-1' }
+    })
+
+    expect(response.json()).toEqual({ id: 'from-proxy-1' })
+  })
+
   it('answers anything else with a Matrix 404', async () => {
     const response = await server().inject({ url: '/elsewhere' })
 
