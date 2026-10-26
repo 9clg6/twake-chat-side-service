@@ -95,11 +95,12 @@ beforeAll(async () => {
 afterAll(() => fake.close())
 
 let now = 0
+const warnings: string[] = []
 async function pages(
   limits: Pick<PublicPagesDeps, 'pageCacheSize' | 'mediaMaxBytes'> = {}
 ) {
   const app = createServer({
-    logger: pino({ level: 'silent' }),
+    logger: pino({ level: 'warn' }, { write: line => warnings.push(line) }),
     isReady: () => Promise.resolve(true)
   })
   registerPublicPages(app, {
@@ -119,6 +120,7 @@ beforeEach(() => {
   queries.length = 0
   reads = 0
   now = 0
+  warnings.length = 0
 })
 
 describe('GET /b/:ref', () => {
@@ -413,4 +415,97 @@ describe('GET /b/:ref/media/:server/:id', () => {
 
     expect([avatar.statusCode, avatar.body]).toEqual([200, 'PNG'])
   }, 10_000)
+})
+
+describe('GET /sitemap.xml', () => {
+  it('lists the directory rooms that pass the gate', async () => {
+    publicRoom()
+    answers['/_matrix/client/v3/publicRooms'] = ok({
+      chunk: [
+        {
+          room_id: ROOM,
+          canonical_alias: '#news:example.org',
+          world_readable: true,
+          join_rule: 'public'
+        },
+        {
+          room_id: '!closed:example.org',
+          world_readable: true,
+          join_rule: 'invite'
+        }
+      ]
+    })
+    const app = await pages()
+
+    const response = await app.inject({ url: '/sitemap.xml' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.body).toContain(
+      '<loc>https://pages.example.org/b/news</loc>'
+    )
+    expect(response.body).not.toContain('closed')
+    expect(queries.some(query => 'user_id' in query)).toBe(false)
+  })
+
+  it('leaves out the rooms whose state fails the gate', async () => {
+    publicRoom()
+    const listed = (roomId: string) => ({
+      room_id: roomId,
+      world_readable: true,
+      join_rule: 'public'
+    })
+    answers['/_matrix/client/v3/publicRooms'] = ok({
+      chunk: [ROOM, '!off:example.org', '!secret:example.org'].map(listed)
+    })
+    const open = [
+      stateEvent('m.room.history_visibility', {
+        history_visibility: 'world_readable'
+      }),
+      stateEvent('m.room.join_rules', { join_rule: 'public' })
+    ]
+    answers['/_matrix/client/v3/rooms/!off:example.org/state'] = ok([
+      ...open,
+      stateEvent(PUBLIC_PAGE_EVENT, { enabled: false })
+    ])
+    answers['/_matrix/client/v3/rooms/!secret:example.org/state'] = ok([
+      ...open,
+      stateEvent(PUBLIC_PAGE_EVENT, { enabled: true }),
+      stateEvent('m.room.encryption', { algorithm: 'm.megolm.v1.aes-sha2' })
+    ])
+    const app = await pages()
+
+    const response = await app.inject({ url: '/sitemap.xml' })
+
+    expect(response.body).toContain('/b/!room%3Aexample.org')
+    expect(response.body).not.toContain('off')
+    expect(response.body).not.toContain('secret')
+  })
+
+  it('says so when the room directory outgrows what it reads', async () => {
+    publicRoom()
+    answers['/_matrix/client/v3/publicRooms'] = ok({
+      chunk: [],
+      next_batch: 'more'
+    })
+    const app = await pages()
+
+    expect((await app.inject({ url: '/sitemap.xml' })).statusCode).toBe(200)
+    expect(warnings.some(line => line.includes('sitemap cut'))).toBe(true)
+  })
+
+  it('keeps a failure a few seconds, rather than reading a homeserver down on each request', async () => {
+    let listings = 0
+    answers['/_matrix/client/v3/publicRooms'] = () => {
+      listings += 1
+      return { status: 500, body: {} }
+    }
+    const app = await pages()
+
+    expect((await app.inject({ url: '/sitemap.xml' })).statusCode).toBe(502)
+    expect((await app.inject({ url: '/sitemap.xml' })).statusCode).toBe(502)
+    expect(listings).toBe(1)
+    now = 10_000
+    await app.inject({ url: '/sitemap.xml' })
+    expect(listings).toBe(2)
+  })
 })

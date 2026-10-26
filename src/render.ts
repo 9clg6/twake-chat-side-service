@@ -271,3 +271,18 @@ export function renderPage(
       : `<p class="muted">${t.empty}</p>`
   })
 }
+
+export function renderSitemap(refs: string[], publicUrl: string): string {
+  const urls = refs.map(
+    ref => `  <url><loc>${escapeHtml(publicUrl + pagePath(ref))}</loc></url>`
+  )
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls.join('\n')}
+</urlset>
+`
+}
+
+/** Crawlers read the pages, never the API of the service (D398). */
+export const renderRobots = (publicUrl: string): string =>
+  `User-agent: *\nAllow: /b/\nAllow: /sitemap.xml\nDisallow: /\nSitemap: ${publicUrl}/sitemap.xml\n`

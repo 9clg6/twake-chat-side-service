@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { Page, Post } from './pages.ts'
-import { langOf, renderPage, sanitizeFormatted } from './render.ts'
+import {
+  langOf,
+  renderPage,
+  renderRobots,
+  sanitizeFormatted
+} from './render.ts'
 
 describe('sanitizeFormatted', () => {
   it('keeps the tags of the spec and drops scripts and handlers', () => {
@@ -119,5 +124,13 @@ describe('langOf', () => {
     expect(langOf('fr-FR,fr;q=0.9,en;q=0.8')).toBe('fr')
     expect(langOf('en-US,fr;q=0.9')).toBe('en')
     expect(langOf(undefined)).toBe('en')
+  })
+})
+
+describe('renderRobots', () => {
+  it('lets crawlers into the pages and the sitemap only', () => {
+    expect(renderRobots('https://pages.example.org')).toBe(
+      'User-agent: *\nAllow: /b/\nAllow: /sitemap.xml\nDisallow: /\nSitemap: https://pages.example.org/sitemap.xml\n'
+    )
   })
 })
