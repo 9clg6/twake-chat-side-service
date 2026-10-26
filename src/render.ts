@@ -9,6 +9,7 @@ const template = (name: string) =>
   readFileSync(new URL(name, TEMPLATES), 'utf8')
 const PAGE = template('page.html')
 const POST = template('post.html')
+const STYLE = template('page.css')
 export const NOT_FOUND = template('not-found.html')
 
 const DESCRIPTION_LIMIT = 300
@@ -251,6 +252,7 @@ export function renderPage(
       structuredData(page, url, publicUrl, imageUrl)
     ),
     accent: page.accentColor,
+    style: STYLE,
     cover: page.coverUrl
       ? `<img src="${escapeHtml(mediaPath(page.ref, page.coverUrl))}" alt="">`
       : '',
