@@ -56,4 +56,10 @@ describe('loadConfig', () => {
       loadConfig({ ...REQUIRED, ASSISTANTS_URL: harness.ASSISTANTS_URL })
     ).toThrow('ASSISTANTS_TOKEN_URL: required with the others')
   })
+
+  it('serves the public pages with their address and the one of Chat only', () => {
+    expect(() =>
+      loadConfig({ ...REQUIRED, PUBLIC_PAGES_URL: 'https://pages.example.org' })
+    ).toThrow('CHAT_URL: required with the others')
+  })
 })

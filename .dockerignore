@@ -4,5 +4,6 @@
 !tsconfig.json
 !tsconfig.build.json
 !src/
+!templates/
 src/**/*.test.ts
 src/testing.ts
