@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="{{lang}}" style="--accent: {{accent}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{name}}</title>
+    <link rel="canonical" href="{{url}}" />
+    <meta name="description" content="{{description}}" />
+    <meta property="og:type" content="profile" />
+    <meta property="og:title" content="{{name}}" />
+    <meta property="og:description" content="{{description}}" />
+    <meta property="og:url" content="{{url}}" />
+    {{ogImage}}
+    <meta name="twitter:card" content="{{twitterCard}}" />
+    <script type="application/ld+json">
+      {{structuredData}}
+    </script>
+  </head>
+  <body>
+    <div class="cover">{{cover}}</div>
+    <main>
+      <header>
+        {{avatar}}
+        <div>
+          <h1>{{name}}</h1>
+          <p class="muted" data-testid="followers">{{followers}}</p>
+        </div>
+      </header>
+      {{topic}}
+      <a class="react" href="{{chatLink}}">{{react}}</a>
+      <h2>{{postsTitle}}</h2>
+      {{posts}}
+    </main>
+  </body>
+</html>
