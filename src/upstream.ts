@@ -62,17 +62,44 @@ export function withDeadline<T>(
 }
 
 /** `fetch`, with the timeout, and a network failure turned into an `UpstreamError`. */
-export async function call(
+export function call(
   service: string,
   url: string,
   init: RequestInit = {},
   timeoutMs = UPSTREAM_TIMEOUT_MS
 ): Promise<Response> {
+  return send(service, url, {
+    ...init,
+    signal: AbortSignal.timeout(timeoutMs)
+  })
+}
+
+/** `call` whose timeout ends with the headers: the body, a media, streams as long as it takes. */
+export async function callForStream(
+  service: string,
+  url: string,
+  init: RequestInit = {}
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => {
+    controller.abort(
+      new Error(`no headers within ${String(UPSTREAM_TIMEOUT_MS)} ms`)
+    )
+  }, UPSTREAM_TIMEOUT_MS)
   try {
-    return await fetch(url, {
-      ...init,
-      signal: AbortSignal.timeout(timeoutMs)
-    })
+    return await send(service, url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function send(
+  service: string,
+  url: string,
+  init: RequestInit
+): Promise<Response> {
+  try {
+    return await fetch(url, init)
   } catch (err) {
     throw new UpstreamError(
       service,
