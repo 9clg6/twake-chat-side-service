@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   canonicalRef,
+  hasAllPosts,
   isCandidate,
   isPublic,
+  mediaOf,
+  parseMxc,
   parseRef,
   PUBLIC_PAGE_EVENT,
+  readPage,
   sitemapRef
 } from './pages.ts'
 import type { RoomEvent } from './room-reader.ts'
@@ -120,5 +124,124 @@ describe('canonicalRef', () => {
     expect(canonicalRef('%6eews')).toBe('news')
     expect(canonicalRef('%2E%2E%2Fadmin')).toBeNull()
     expect(canonicalRef('%E0%A4%A')).toBeNull()
+  })
+})
+
+describe('parseMxc', () => {
+  it('reads a server name and a media id, and nothing that climbs the media path', () => {
+    expect(parseMxc('mxc://example.org:8448/abc_D-1')).toEqual({
+      server: 'example.org:8448',
+      id: 'abc_D-1'
+    })
+    for (const url of [
+      'mxc://../config',
+      'mxc://./config',
+      'mxc://example..org/abc',
+      'mxc://example.org:/abc',
+      'mxc://example.org/../abc'
+    ]) {
+      expect(parseMxc(url)).toBeNull()
+    }
+  })
+})
+
+describe('hasAllPosts', () => {
+  it('counts the posts only, not the reactions nor the edits', () => {
+    const post = event('m.room.message', { msgtype: 'm.text', body: 'Hi' })
+    const reactions = Array.from({ length: 100 }, () =>
+      event('m.reaction', {
+        'm.relates_to': {
+          rel_type: 'm.annotation',
+          event_id: post.event_id,
+          key: '👍'
+        }
+      })
+    )
+
+    expect(hasAllPosts([...reactions, post])).toBe(false)
+    expect(hasAllPosts(Array.from({ length: 30 }, () => post))).toBe(true)
+  })
+})
+
+describe('readPage', () => {
+  it('shows nothing of a room that fails the gate', () => {
+    expect(
+      readPage('news', ROOM, openRoom({ [PUBLIC_PAGE_EVENT]: null }), [])
+    ).toBeNull()
+  })
+
+  it('shows the posts newest first, edited by their sender only, with the reactions of members', () => {
+    const post = event('m.room.message', { msgtype: 'm.text', body: 'first' })
+    const thread = event('m.room.message', {
+      body: 'in a thread',
+      'm.relates_to': { rel_type: 'm.thread', event_id: post.event_id }
+    })
+    const edit = (sender: string, body: string) =>
+      event(
+        'm.room.message',
+        {
+          body: `* ${body}`,
+          'm.new_content': { msgtype: 'm.text', body },
+          'm.relates_to': { rel_type: 'm.replace', event_id: post.event_id }
+        },
+        { sender }
+      )
+    const react = (sender: string, key: string) =>
+      event(
+        'm.reaction',
+        {
+          'm.relates_to': {
+            rel_type: 'm.annotation',
+            event_id: post.event_id,
+            key
+          }
+        },
+        { sender }
+      )
+    const messages = [
+      edit('@mallory:example.org', 'hijacked'),
+      edit('@alice:example.org', 'first, edited'),
+      react('@bob:example.org', '👍'),
+      react('@bob:example.org', '👍'),
+      react('@carol:example.org', '👍'),
+      thread,
+      post
+    ]
+
+    const page = readPage('news', ROOM, openRoom(), messages)
+
+    expect(page?.roomId).toBe(ROOM)
+    expect(page?.name).toBe('News')
+    expect(page?.followerCount).toBe(1)
+    expect(page?.posts).toEqual([
+      {
+        id: post.event_id,
+        author: 'Alice',
+        at: post.origin_server_ts,
+        text: 'first, edited',
+        formatted: null,
+        image: null,
+        reactions: { '👍': 2 }
+      }
+    ])
+  })
+
+  it('serves only the media the page shows', () => {
+    const image = event('m.room.message', {
+      msgtype: 'm.image',
+      body: 'a cat',
+      url: 'mxc://example.org/cat'
+    })
+    const page = readPage(
+      'news',
+      ROOM,
+      openRoom({ 'm.room.avatar': { url: 'mxc://example.org/avatar' } }),
+      [image]
+    )
+
+    expect(page && [...mediaOf(page)]).toEqual([
+      'mxc://example.org/avatar',
+      'mxc://example.org/cat'
+    ])
   })
 })
