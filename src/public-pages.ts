@@ -5,19 +5,34 @@ import type { HttpServer } from './http.ts'
 import {
   canonicalRef,
   hasAllPosts,
+  isCandidate,
   isPublic,
   mediaOf,
   type Page,
   parseRef,
-  readPage
+  readPage,
+  sitemapRef
 } from './pages.ts'
-import { langOf, NOT_FOUND, pagePath, renderPage } from './render.ts'
+import {
+  langOf,
+  NOT_FOUND,
+  pagePath,
+  renderPage,
+  renderRobots,
+  renderSitemap
+} from './render.ts'
 import type { RoomReader } from './room-reader.ts'
 import { UpstreamError } from './upstream.ts'
 
 /** How long a page is kept before the homeserver is read again. */
 const PAGE_MS = 60_000
 const PAGE_MAX = 1000
+/** How long the sitemap is kept: the `max-age` of its answer. */
+const SITEMAP_MS = 300_000
+/** State reads of the sitemap in flight at once. */
+const SITEMAP_READS = 8
+/** How long a failed sitemap is answered as is, rather than read again from a homeserver down. */
+const SITEMAP_FAILURE_MS = 10_000
 
 const HTML_HEADERS = {
   'content-type': 'text/html; charset=utf-8',
@@ -94,6 +109,9 @@ export function registerPublicPages(
   const missing = new Map<string, { at: number }>()
   /** The reads in flight, which the requests of their ref meanwhile share. */
   const reading = new Map<string, Promise<Page | null>>()
+  let sitemap: { at: number; xml: string } | null = null
+  let rendering: Promise<string> | null = null
+  let failed: { at: number; error: Error } | null = null
 
   /**
    * The page of a ref, read at most once a minute per replica, and once at a time:
@@ -154,6 +172,74 @@ export function registerPublicPages(
     const messages = await reader.messages(roomId, hasAllPosts)
     return readPage(ref, roomId, state, messages)
   }
+
+  /** The refs of the directory rooms that pass the gate, one state read per candidate. */
+  async function sitemapRefs(): Promise<string[]> {
+    const { rooms, complete } = await reader.publicRooms()
+    if (!complete) {
+      app.log.warn(
+        { rooms: rooms.length },
+        'sitemap cut: the room directory outgrew what it reads'
+      )
+    }
+    const candidates = rooms.filter(isCandidate)
+    const refs: string[] = []
+    for (let i = 0; i < candidates.length; i += SITEMAP_READS) {
+      const batch = candidates.slice(i, i + SITEMAP_READS)
+      // A state read that fails drops its room, not the whole sitemap
+      const states = await Promise.allSettled(
+        batch.map(room => reader.state(room.room_id))
+      )
+      batch.forEach((room, j) => {
+        const read = states[j]
+        const ref = sitemapRef(room, serverName)
+        if (ref && read?.status === 'fulfilled' && read.value) {
+          if (isPublic(read.value)) refs.push(ref)
+        }
+      })
+    }
+    return refs
+  }
+
+  /** Rendered at most once per `SITEMAP_MS` and once at a time; a failure is kept `SITEMAP_FAILURE_MS`. */
+  function sitemapXml(): Promise<string> {
+    if (sitemap && now() - sitemap.at < SITEMAP_MS) {
+      return Promise.resolve(sitemap.xml)
+    }
+    if (failed && now() - failed.at < SITEMAP_FAILURE_MS) {
+      return Promise.reject(failed.error)
+    }
+    rendering ??= sitemapRefs()
+      .then(refs => {
+        const xml = renderSitemap(refs, publicUrl)
+        sitemap = { at: now(), xml }
+        return xml
+      })
+      .catch((err: unknown) => {
+        if (err instanceof Error) failed = { at: now(), error: err }
+        throw err
+      })
+      .finally(() => {
+        rendering = null
+      })
+    return rendering
+  }
+
+  app.get('/robots.txt', (_request, reply) =>
+    reply.type('text/plain; charset=utf-8').send(renderRobots(publicUrl))
+  )
+
+  app.get('/sitemap.xml', async (_request, reply) => {
+    try {
+      const xml = await sitemapXml()
+      return await reply
+        .header('cache-control', `public, max-age=${String(SITEMAP_MS / 1000)}`)
+        .type('application/xml')
+        .send(xml)
+    } catch (err) {
+      return upstreamFailed(reply, err)
+    }
+  })
 
   app.get<{ Params: { ref: string } }>('/b/:ref', async (request, reply) => {
     const ref = canonicalRef(request.params.ref)
