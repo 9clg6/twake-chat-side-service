@@ -1,5 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises'
-import { pino } from 'pino'
+import { createLogger } from '@linagora/twake-node-telemetry'
 import postgres from 'postgres'
 import { RateLimit, registerAssistants } from './assistants.ts'
 import { CallRooms } from './call-rooms.ts'
@@ -19,7 +19,10 @@ const DRAIN_MS = 5000
 const SHUTDOWN_DEADLINE_MS = 25_000
 
 const config = loadConfig()
-const logger = pino({ level: config.LOG_LEVEL })
+const logger = createLogger({
+  service: 'twake-chat-side-service',
+  level: config.LOG_LEVEL
+})
 const lifecycle = handleSignals({
   log: logger,
   deadlineMs: SHUTDOWN_DEADLINE_MS

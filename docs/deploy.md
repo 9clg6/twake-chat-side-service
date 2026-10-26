@@ -41,7 +41,10 @@ others as `member`. The LiveKit identity is `@user:server:device`.
 `ghcr.io/linagora/twake-chat-side-service`, tagged `latest` from `main`
 and `X.Y.Z` from each release tag `vX.Y.Z`. Node 24; it runs as uid 1000 and
 works on a read-only root filesystem, and listens on port 8080. It logs JSON
-lines (pino): one per refused token and per failure.
+lines with
+[`@linagora/twake-node-telemetry`](https://github.com/linagora/twake-libs/tree/%40linagora/twake-node-telemetry%401.1.0/packages/twake-node-telemetry):
+`service`, the level as text and an ISO `time` on every line, secrets and the
+`email` key masked. It logs one line per refused token and per failure.
 
 ## Routes
 
