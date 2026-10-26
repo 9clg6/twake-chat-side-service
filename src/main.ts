@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import { createLogger } from '@linagora/twake-node-telemetry'
+import * as Sentry from '@sentry/node'
 import postgres from 'postgres'
 import { RateLimit, registerAssistants } from './assistants.ts'
 import { CallRooms } from './call-rooms.ts'
@@ -25,7 +26,9 @@ const logger = createLogger({
 })
 const lifecycle = handleSignals({
   log: logger,
-  deadlineMs: SHUTDOWN_DEADLINE_MS
+  deadlineMs: SHUTDOWN_DEADLINE_MS,
+  // process.exit drops what Sentry has not sent yet.
+  exit: code => void Sentry.close(2000).then(() => process.exit(code))
 })
 
 const connect = (max?: number) =>
