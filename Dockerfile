@@ -17,4 +17,4 @@ COPY package.json ./
 COPY --from=build /app/dist dist
 USER 1000:1000
 EXPOSE 8080
-CMD ["node", "dist/main.js"]
+CMD ["node", "--import", "./dist/instrument.js", "dist/main.js"]

@@ -44,7 +44,9 @@ works on a read-only root filesystem, and listens on port 8080. It logs JSON
 lines with
 [`@linagora/twake-node-telemetry`](https://github.com/linagora/twake-libs/tree/%40linagora/twake-node-telemetry%401.1.0/packages/twake-node-telemetry):
 `service`, the level as text and an ISO `time` on every line, secrets and the
-`email` key masked. It logs one line per refused token and per failure.
+`email` key masked. It logs one line per refused token and per failure. It
+starts with `node --import ./dist/instrument.js dist/main.js`: a command
+override must keep the `--import`, or Sentry gets nothing.
 
 ## Routes
 
@@ -91,6 +93,12 @@ All required unless a default is given.
   minute and replica, 60 by default.
 - `HTTP_HOST`, `HTTP_PORT`: `0.0.0.0` and 8080 by default.
 - `LOG_LEVEL`: `info` by default.
+- `SENTRY_DSN` (optional, secret) and `SENTRY_ENVIRONMENT` (optional): every
+  `error` and `fatal` line becomes a Sentry event, with the release
+  `twake-chat-side-service@<version>` and the tag `service`, and without request
+  data (headers, bodies, query strings, database parameters). On an unhandled
+  promise rejection, Sentry reports it and the process exits with code 1.
+  Without `SENTRY_DSN`, nothing is sent.
 
 Each request to Synapse or Meet gives up after 5 seconds, and so does each step
 with the directory (connection, bind, search). The token request as a whole
