@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{lang}}" style="--accent: {{accent}}">
+<html lang="{{lang}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -15,9 +15,8 @@
     <script type="application/ld+json">
       {{structuredData}}
     </script>
-    <style>
-      {{style}}
-    </style>
+    <link rel="stylesheet" href="{{stylesheet}}" />
+    {{accentStyle}}
   </head>
   <body>
     <div class="cover">{{cover}}</div>

@@ -32,6 +32,7 @@ docker run -d --name "$RUN-service" --network "$RUN" \
   -e MEET_URL=http://meet -e MEET_CLIENT_ID=smoke-test -e MEET_CLIENT_SECRET=smoke-test \
   -e MEET_SERVICE_ACCOUNT_EMAIL=calls@example.org \
   -e LDAP_URL=ldap://ldap -e LDAP_BASE=dc=example,dc=org \
+  -e PUBLIC_PAGES_URL=https://pages.example.org -e CHAT_URL=https://chat.example.org \
   "$IMAGE" >/dev/null
 API="http://$(docker port "$RUN-service" 8080/tcp | head -1)"
 
@@ -61,6 +62,8 @@ expect 'answers the preflight of the browsers' "$(status -X OPTIONS "$API/sfu/ge
 expect 'refuses a token request of the wrong shape' \
   "$(status -X POST -H 'content-type: application/json' -d '{}' "$API/sfu/get")" '400'
 expect 'serves no assistants without a harness' "$(status "$API/assistants/me")" '404'
+expect 'serves the stylesheet of the pages, palette included' \
+  "$(curl -s "$API/b/assets/page.css" | grep -q -- '--twake-palette-background-default:' && echo yes)" 'yes'
 
 docker kill -s TERM "$RUN-service" >/dev/null
 code="$(timeout 40 docker wait "$RUN-service" || echo timeout)"

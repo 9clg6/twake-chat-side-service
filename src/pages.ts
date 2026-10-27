@@ -7,7 +7,6 @@ export const PUBLIC_PAGE_EVENT = 'app.twake.chat.public_page'
 const PAGE_STYLE_EVENT = 'app.twake.chat.page_style'
 /** The posts shown on a page, newest first. */
 const POST_LIMIT = 30
-const DEFAULT_ACCENT = '#2b6cb0'
 
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 /** A room id; from room version 12 it names no server (MSC4291). */
@@ -36,7 +35,8 @@ export interface Page {
   topic: string
   avatarUrl: string | null
   coverUrl: string | null
-  accentColor: string
+  /** The colour its owner chose (D350), `#rrggbb`; null: the palette's. */
+  accentColor: string | null
   followerCount: number
   posts: Post[]
 }
@@ -240,7 +240,7 @@ export function readPage(
     topic: text(of('m.room.topic').topic),
     avatarUrl: parseMxc(avatar) ? avatar : null,
     coverUrl: parseMxc(style.cover_url) ? text(style.cover_url) : null,
-    accentColor: /^#[0-9a-f]{6}$/i.test(color) ? color : DEFAULT_ACCENT,
+    accentColor: /^#[0-9a-f]{6}$/i.test(color) ? color : null,
     followerCount: members.filter(event => event.content.membership === 'join')
       .length,
     posts: postsOf(messages, names)

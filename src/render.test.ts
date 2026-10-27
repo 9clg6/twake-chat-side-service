@@ -1,10 +1,12 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import type { Page, Post } from './pages.ts'
 import {
   langOf,
   renderPage,
   renderRobots,
-  sanitizeFormatted
+  sanitizeFormatted,
+  STYLESHEET
 } from './render.ts'
 
 describe('sanitizeFormatted', () => {
@@ -72,6 +74,24 @@ describe('renderPage', () => {
     lang: 'en'
   })
 
+  it('takes its colours from the stylesheet, and sets the one of the room alone', () => {
+    expect(html).toMatch(
+      /<link rel="stylesheet" href="\/b\/assets\/page\.css\?v=[0-9a-f]{16}" \/>/
+    )
+    expect(html).toContain('<style>:root{--accent:#2b6cb0}</style>')
+    expect(html).not.toContain(' style=')
+
+    const plain = renderPage(
+      { ...PAGE, accentColor: null },
+      {
+        publicUrl: 'https://pages.example.org',
+        chatUrl: 'https://chat.example.org',
+        lang: 'en'
+      }
+    )
+    expect(plain).not.toContain('<style>')
+  })
+
   it('escapes the room and renders a plain body as Markdown without raw HTML', () => {
     expect(html).toContain('<h1>News &lt;b&gt;</h1>')
     expect(html).toContain('<strong>bold</strong>')
@@ -116,6 +136,24 @@ describe('renderPage', () => {
 
     expect(data).toContain('SocialMediaPosting')
     expect(data).not.toContain('butler')
+  })
+})
+
+describe('STYLESHEET', () => {
+  it('is the Twake palette, light and dark, then a layout without a colour of its own', () => {
+    const layout = readFileSync(
+      new URL('../templates/page.css', import.meta.url),
+      'utf8'
+    )
+
+    expect(STYLESHEET.startsWith(layout)).toBe(false)
+    expect(STYLESHEET).toContain('--twake-palette-background-default')
+    expect(STYLESHEET).toContain('@media (prefers-color-scheme: dark)')
+    expect(STYLESHEET.endsWith(layout)).toBe(true)
+    expect(layout).not.toMatch(
+      /#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(|\b(white|black)\b/i
+    )
+    expect(layout).not.toContain('prefers-color-scheme')
   })
 })
 
