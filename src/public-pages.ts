@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { pipeline, Readable, Transform } from 'node:stream'
 import type { ReadableStream } from 'node:stream/web'
 import type { FastifyReply } from 'fastify'
@@ -14,12 +15,15 @@ import {
   sitemapRef
 } from './pages.ts'
 import {
+  accentStyleOf,
   langOf,
   NOT_FOUND,
   pagePath,
   renderPage,
   renderRobots,
-  renderSitemap
+  renderSitemap,
+  STYLESHEET,
+  STYLESHEET_PATH
 } from './render.ts'
 import type { RoomReader } from './room-reader.ts'
 import { UpstreamError } from './upstream.ts'
@@ -34,13 +38,20 @@ const SITEMAP_READS = 8
 /** How long a failed sitemap is answered as is, rather than read again from a homeserver down. */
 const SITEMAP_FAILURE_MS = 10_000
 
-const HTML_HEADERS = {
-  'content-type': 'text/html; charset=utf-8',
-  // No script runs on a page; images come from this service only
-  'content-security-policy':
-    "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
-  'x-content-type-options': 'nosniff',
-  'referrer-policy': 'strict-origin-when-cross-origin'
+/**
+ * No script runs on a page; images and the stylesheet come from this service only,
+ * and the one inline style is the colour of the room, allowed by its hash.
+ */
+function htmlHeaders(inlineStyle: string | null = null) {
+  const styleSrc = inlineStyle
+    ? `'self' 'sha256-${createHash('sha256').update(inlineStyle).digest('base64')}'`
+    : "'self'"
+  return {
+    'content-type': 'text/html; charset=utf-8',
+    'content-security-policy': `default-src 'none'; img-src 'self'; style-src ${styleSrc}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'strict-origin-when-cross-origin'
+  }
 }
 
 const MEDIA_MAX_BYTES = 50 * 1024 * 1024
@@ -77,7 +88,7 @@ export interface PublicPagesDeps {
 }
 
 const notFound = (reply: FastifyReply) =>
-  reply.code(404).headers(HTML_HEADERS).send(NOT_FOUND)
+  reply.code(404).headers(htmlHeaders()).send(NOT_FOUND)
 
 /** A homeserver that fails answers 502; anything else is a bug, thrown on. */
 function upstreamFailed(reply: FastifyReply, err: unknown): FastifyReply {
@@ -229,6 +240,17 @@ export function registerPublicPages(
     reply.type('text/plain; charset=utf-8').send(renderRobots(publicUrl))
   )
 
+  app.get(STYLESHEET_PATH, (_request, reply) =>
+    reply
+      .type('text/css; charset=utf-8')
+      .headers({
+        // Its URL changes with its content
+        'cache-control': 'public, max-age=31536000, immutable',
+        'x-content-type-options': 'nosniff'
+      })
+      .send(STYLESHEET)
+  )
+
   app.get('/sitemap.xml', async (_request, reply) => {
     try {
       const xml = await sitemapXml()
@@ -254,7 +276,7 @@ export function registerPublicPages(
       if (!page) return await notFound(reply)
       const lang = langOf(request.headers['accept-language'])
       return await reply
-        .headers(HTML_HEADERS)
+        .headers(htmlHeaders(accentStyleOf(page)))
         .header('cache-control', `public, max-age=${String(PAGE_MS / 1000)}`)
         .header('vary', 'accept-language')
         .send(renderPage(page, { publicUrl, chatUrl, lang }))

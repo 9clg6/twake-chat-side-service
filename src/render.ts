@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import MarkdownIt from 'markdown-it'
 import sanitizeHtml from 'sanitize-html'
 import { type Page, parseMxc, type Post } from './pages.ts'
@@ -9,8 +11,23 @@ const template = (name: string) =>
   readFileSync(new URL(name, TEMPLATES), 'utf8')
 const PAGE = template('page.html')
 const POST = template('post.html')
-const STYLE = template('page.css')
 export const NOT_FOUND = template('not-found.html')
+
+/** The stylesheet of the pages: the Twake palette, light and dark, then their layout. */
+export const STYLESHEET = `${readFileSync(
+  createRequire(import.meta.url).resolve('@linagora/twake-css/dist/vars.css'),
+  'utf8'
+)}\n${template('page.css')}`
+export const STYLESHEET_PATH = '/b/assets/page.css'
+/** Its URL, versioned by its content: a cache may keep it a year. */
+const STYLESHEET_URL = `${STYLESHEET_PATH}?v=${createHash('sha256')
+  .update(STYLESHEET)
+  .digest('hex')
+  .slice(0, 16)}`
+
+/** The colour of the room, the one style a page sets itself; null without one. */
+export const accentStyleOf = (page: Page): string | null =>
+  page.accentColor ? `:root{--accent:${page.accentColor}}` : null
 
 const DESCRIPTION_LIMIT = 300
 
@@ -239,6 +256,7 @@ export function renderPage(
   const description = page.topic.slice(0, DESCRIPTION_LIMIT)
   const posts = page.posts.map(post => postHtml(page, post, lang)).join('\n')
   const name = escapeHtml(page.name)
+  const accent = accentStyleOf(page)
   return fill(PAGE, {
     lang,
     name,
@@ -251,8 +269,8 @@ export function renderPage(
     structuredData: jsonForScript(
       structuredData(page, url, publicUrl, imageUrl)
     ),
-    accent: page.accentColor,
-    style: STYLE,
+    stylesheet: STYLESHEET_URL,
+    accentStyle: accent ? `<style>${accent}</style>` : '',
     cover: page.coverUrl
       ? `<img src="${escapeHtml(mediaPath(page.ref, page.coverUrl))}" alt="">`
       : '',

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { pino } from 'pino'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
@@ -141,6 +142,41 @@ describe('GET /b/:ref', () => {
     )
     // Never on behalf of a user: the as_token alone
     expect(queries.some(query => 'user_id' in query)).toBe(false)
+  })
+
+  it('allows its stylesheet and no inline style but the colour of its room', async () => {
+    publicRoom()
+    const app = await pages()
+    const plain = await app.inject({ url: '/b/news' })
+
+    expect(plain.headers['content-security-policy']).toContain(
+      "style-src 'self';"
+    )
+
+    const state = answers[`${ROOM_PATH}/state`]
+    answers[`${ROOM_PATH}/state`] = query => {
+      const answer = state?.(query) ?? { status: 404, body: [] }
+      return {
+        ...answer,
+        body: [
+          ...(answer.body as unknown[]),
+          stateEvent('app.twake.chat.page_style', { accent_color: '#ff8800' })
+        ]
+      }
+    }
+    now = 60_000
+    const styled = await app.inject({ url: '/b/news' })
+    const hash = createHash('sha256')
+      .update(':root{--accent:#ff8800}')
+      .digest('base64')
+
+    expect(styled.body).toContain('<style>:root{--accent:#ff8800}</style>')
+    expect(styled.headers['content-security-policy']).toContain(
+      `style-src 'self' 'sha256-${hash}';`
+    )
+    expect(styled.headers['content-security-policy']).not.toContain(
+      'unsafe-inline'
+    )
   })
 
   it('reads the homeserver again after a minute only', async () => {
@@ -507,5 +543,20 @@ describe('GET /sitemap.xml', () => {
     now = 10_000
     await app.inject({ url: '/sitemap.xml' })
     expect(listings).toBe(2)
+  })
+})
+
+describe('GET /b/assets/page.css', () => {
+  it('serves the stylesheet of the pages, kept as long as its URL', async () => {
+    const app = await pages()
+
+    const response = await app.inject({ url: '/b/assets/page.css?v=any' })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.headers['content-type']).toBe('text/css; charset=utf-8')
+    expect(response.headers['cache-control']).toBe(
+      'public, max-age=31536000, immutable'
+    )
+    expect(response.body).toContain('--twake-palette-background-default')
   })
 })

@@ -233,6 +233,10 @@ answers 404. Decided in D388 and D398 of the decision log of Twake Chat.
 - A page shows the 30 latest posts with the reactions of members, and the media
   it shows only, up to 50 MiB each. It sends no script and keeps no state: each
   replica keeps a page a minute and the sitemap five minutes.
+- The colours of the pages are the Twake palette of `@linagora/twake-css`,
+  light or dark as the visitor's system asks, and the colour the owner chose
+  for the room. Their stylesheet is `/b/assets/page.css?v=<version>`, kept a
+  year by caches: a CDN in front must keep the query string in its cache key.
 - Pages and media answer with `cache-control: public, max-age=60`. A page
   turned off is still served for up to a minute by each replica, and a shared
   cache (a CDN) may keep it the `max-age` more.
