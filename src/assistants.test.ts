@@ -148,12 +148,12 @@ describe('the assistant routes', () => {
       [
         answer(404, { error: 'no assistant' }),
         404,
-        { errcode: 'M_BOT_NOT_FOUND', error: 'no assistant' }
+        { errcode: 'APP.TWAKE.BOT_NOT_FOUND', error: 'no assistant' }
       ],
       [
         answer(409, { error: 'recovery_needed' }),
         409,
-        { errcode: 'M_BOT_RECOVERY_NEEDED', error: 'recovery_needed' }
+        { errcode: 'APP.TWAKE.BOT_RECOVERY_NEEDED', error: 'recovery_needed' }
       ],
       [
         answer(409, { error: 'not a member' }),

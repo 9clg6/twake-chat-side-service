@@ -62,8 +62,8 @@ export class RateLimit {
  * other is no answer of the harness (a route missing at APISIX, a proxy error): a 502.
  */
 const ERRCODES: Record<string, string> = {
-  'no assistant': 'M_BOT_NOT_FOUND',
-  recovery_needed: 'M_BOT_RECOVERY_NEEDED',
+  'no assistant': 'APP.TWAKE.BOT_NOT_FOUND',
+  recovery_needed: 'APP.TWAKE.BOT_RECOVERY_NEEDED',
   'not a member': 'M_UNKNOWN',
   'not a direct room': 'M_UNKNOWN',
   'owner not on the homeserver': 'M_UNKNOWN',
