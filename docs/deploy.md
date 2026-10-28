@@ -186,9 +186,10 @@ sequenceDiagram
   token; the routes take no other.
 - The service answers what the harness answers, `Retry-After` included: a 503
   while the assistant is not ready, which the client asks again. A refusal
-  keeps the `error` of the harness and gains an `errcode`: `M_BOT_NOT_FOUND` for
-  `no assistant`, `M_BOT_RECOVERY_NEEDED` for `recovery_needed`, `M_UNKNOWN`
-  for the other failures of its API. Any other answer, such as a route missing
+  keeps the `error` of the harness and gains an `errcode`:
+  `APP.TWAKE.BOT_NOT_FOUND` for `no assistant`, `APP.TWAKE.BOT_RECOVERY_NEEDED`
+  for `recovery_needed`, `M_UNKNOWN` for the other failures of its API. The
+  `M_` prefix belongs to the Matrix spec: a code of our own is namespaced. Any other answer, such as a route missing
   at APISIX, is logged and answers 502.
 - A 401 or a 403 of the harness concerns the token of the service, never the
   user's: the service asks a new token once on a 401, then answers 502. Its own

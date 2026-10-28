@@ -14,7 +14,7 @@ export class Homeserver {
     this.#asToken = asToken
   }
 
-  /** MSC4502: the scope `is_joined` of the registration answers for any room the homeserver is in. */
+  /** MSC4502 (unstable, `io.element.msc4502`; move to its stable name once merged): the scope `is_joined` of the registration answers for any room the homeserver is in. */
   async isJoined(roomId: string, userId: string): Promise<boolean> {
     const path = `/_matrix/client/unstable/io.element.msc4502/rooms/${encodeURIComponent(roomId)}/is_joined`
     const response = await this.#get(path, { mxid: userId })
