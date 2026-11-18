@@ -34,11 +34,6 @@ function fakes() {
         Promise.resolve(ALICE)
       )
     },
-    directory: {
-      entry: vi.fn<(uid: string) => Promise<DirectoryEntry>>(() =>
-        Promise.resolve(entry())
-      )
-    },
     publisher: {
       publish: vi.fn<
         (
@@ -53,6 +48,13 @@ function fakes() {
   } satisfies AnalyticsDeps
 }
 
+/** The directory must stay untouched: injected whether or not the dependency still exists. */
+const directory = {
+  entry: vi.fn<(uid: string) => Promise<DirectoryEntry>>(() =>
+    Promise.resolve(entry())
+  )
+}
+
 let deps = fakes()
 
 function post(
@@ -64,7 +66,11 @@ function post(
     logger: pino({ level: 'silent' }),
     isReady: () => Promise.resolve(true)
   })
-  registerAnalytics(server, { ...deps, ...overrides })
+  registerAnalytics(server, {
+    ...deps,
+    directory,
+    ...overrides
+  } as AnalyticsDeps)
   return server.inject({
     method: 'POST',
     url: '/analytics/events',
@@ -81,6 +87,8 @@ const batch = (...events: unknown[]) => ({
 
 beforeEach(() => {
   deps = fakes()
+  directory.entry.mockReset()
+  directory.entry.mockImplementation(() => Promise.resolve(entry()))
 })
 
 describe('POST /analytics/events', () => {
@@ -146,9 +154,6 @@ describe('POST /analytics/events', () => {
       source: 'twake://chat',
       type: 'com.twake.chat.user.active.v1',
       time: '2026-10-27T09:59:00Z',
-      twakeactor: 'alice@example.org',
-      twakeactorid: 'uuid-alice',
-      twakeorg: 'acme123',
       data: {
         category: 'foreground',
         action: 'message_sent',
@@ -168,16 +173,38 @@ describe('POST /analytics/events', () => {
     })
   })
 
-  it('leaves out the actor id and the organization the directory lacks', async () => {
-    deps.directory.entry.mockResolvedValue(entry({ actorId: null, org: null }))
+  it('publishes no actor, actor id, organization nor user id: the event alone', async () => {
     await post(batch(EVENT))
 
     await vi.waitFor(() => {
       expect(deps.publisher.publish).toHaveBeenCalled()
     })
-    const event = deps.publisher.publish.mock.calls[0]?.[1]
-    expect(event).not.toHaveProperty('twakeactorid')
-    expect(event).not.toHaveProperty('twakeorg')
+    const event = deps.publisher.publish.mock.calls[0]?.[1] ?? {}
+    for (const key of ['twakeactor', 'twakeactorid', 'twakeorg']) {
+      expect(event).not.toHaveProperty(key)
+    }
+    const text = JSON.stringify(event)
+    for (const trace of ['alice', 'example.org', 'uuid-alice', 'acme123']) {
+      expect(text).not.toContain(trace)
+    }
+  })
+
+  it('looks nobody up in the directory', async () => {
+    await post(batch(EVENT))
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalled()
+    })
+    expect(directory.entry).not.toHaveBeenCalled()
+  })
+
+  it('publishes an event for a user the directory has no mail for', async () => {
+    directory.entry.mockResolvedValue(entry({ email: null }))
+
+    expect((await post(batch(EVENT))).statusCode).toBe(202)
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('drops the events older than a day or ahead of the clock', async () => {
@@ -203,17 +230,7 @@ describe('POST /analytics/events', () => {
       expect((await post(batch(EVENT))).statusCode).toBe(202)
     }
 
-    expect(deps.directory.entry).not.toHaveBeenCalled()
-    expect(deps.publisher.publish).not.toHaveBeenCalled()
-  })
-
-  it('publishes nothing for a user with no mail', async () => {
-    deps.directory.entry.mockResolvedValue(entry({ email: null }))
-
-    expect((await post(batch(EVENT))).statusCode).toBe(202)
-    await vi.waitFor(() => {
-      expect(deps.directory.entry).toHaveBeenCalledWith('alice')
-    })
+    expect(directory.entry).not.toHaveBeenCalled()
     expect(deps.publisher.publish).not.toHaveBeenCalled()
   })
 
@@ -221,15 +238,20 @@ describe('POST /analytics/events', () => {
     const response = await post(batch(EVENT), { publisher: null })
 
     expect(response.statusCode).toBe(202)
-    expect(deps.directory.entry).not.toHaveBeenCalled()
+    expect(directory.entry).not.toHaveBeenCalled()
   })
 
-  it('answers 202 when the broker or the directory fails', async () => {
+  it('answers 202 when the broker fails', async () => {
     deps.publisher.publish.mockRejectedValue(new Error('down'))
     expect((await post(batch(EVENT))).statusCode).toBe(202)
+  })
 
-    deps.directory.entry.mockRejectedValue(new Error('ldap down'))
+  it('answers 202 and publishes when the directory is down', async () => {
+    directory.entry.mockRejectedValue(new Error('ldap down'))
     expect((await post(batch(EVENT))).statusCode).toBe(202)
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('limits the batches of each user, and only theirs', async () => {
@@ -241,7 +263,6 @@ describe('POST /analytics/events', () => {
     expect(limited.headers['retry-after']).toBe('60')
     expect(limited.json()).toMatchObject({ errcode: 'M_LIMIT_EXCEEDED' })
 
-    expect(deps.directory.entry).toHaveBeenCalledTimes(1)
     deps.openId.userOf.mockResolvedValue('@bob:example.org')
     expect((await post(batch(EVENT))).statusCode).toBe(202)
     await vi.waitFor(() => {
@@ -265,7 +286,7 @@ describe('POST /analytics/events', () => {
       })
       // A broker down for good: no publish ever settles
       deps.publisher.publish.mockReturnValue(new Promise<void>(() => undefined))
-      registerAnalytics(server, deps)
+      registerAnalytics(server, { ...deps, directory } as AnalyticsDeps)
       const send = (count: number) =>
         server.inject({
           method: 'POST',
@@ -297,7 +318,7 @@ describe('POST /analytics/events', () => {
       logger: pino({ level: 'silent' }),
       isReady: () => Promise.resolve(true)
     })
-    registerAnalytics(server, deps)
+    registerAnalytics(server, { ...deps, directory } as AnalyticsDeps)
     const response = await server.inject({
       method: 'OPTIONS',
       url: '/analytics/events'

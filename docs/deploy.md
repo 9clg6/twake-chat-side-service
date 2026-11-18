@@ -90,11 +90,11 @@ All required unless a default is given.
 - `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD`: a bind that may read `mail`,
   `twakeWorkspaceUrl` and `workspaceUrl`, anonymous when unset. The password
   is required with a DN.
+- `LDAP_ORG_ATTRIBUTE` (optional): the attribute that holds the id of the
+  organization of the user, read with the directory entry. The analytics no
+  longer use it.
 - `LDAP_UID_ATTRIBUTE`: the attribute that holds the Matrix localpart, `uid`
   by default.
-- `LDAP_ORG_ATTRIBUTE` (optional): the attribute that holds the id of the
-  organization of the user, sent as `twakeorg` with the analytics. Without it,
-  no event carries one.
 - `AMQP_URL` (optional, secret): the RabbitMQ of twake-user-activity, for
   example `amqp://user:secret@rabbitmq:5672`. Without it, the analytics route
   answers 202 and publishes nothing.
@@ -247,24 +247,23 @@ the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
   `x-matrix-server-name`, a 401 otherwise). A body that is no object with an `events` array of 200 at most answers 400; a
   bad event (name, date) is dropped alone and the others published, with one
   warning that counts them.
-  Otherwise the answer is 202 at once: the directory and the broker are never
+  Otherwise the answer is 202 at once: the broker is never
   waited for, and a failed publish is logged and lost, as the bridge allows.
 - More than `ANALYTICS_BATCHES_PER_MINUTE` batches of a user in a minute answer
   429 with `Retry-After`; Twake Chat drops that batch.
 - While the broker lags, at most 1000 events wait per replica; the others are
   dropped and counted in one warning a minute (`dropped`), even if the broker
   never comes back.
-- `twakeactor` is the `mail` of the user in LDAP, `twakeactorid` its
-  `entryUUID` and `twakeorg` the `LDAP_ORG_ATTRIBUTE`, when set. A user with no
-  mail publishes nothing. The `bot_` and `hermes_` accounts publish nothing
-  either. Each replica keeps a directory entry 5 minutes.
+- The events are anonymous: the OpenID token only proves the caller and sets
+  the rate limit. The CloudEvent carries no `twakeactor`, `twakeactorid`,
+  `twakeorg` nor any value derived from the user, and no LDAP lookup is made.
+  The `bot_` and `hermes_` accounts publish nothing.
 - Properties keep the flat values (text cut to 200 characters, number, boolean,
   null) and drop the nested ones; `view` and the version of the app join them as
   `view` and `appVersion`. An event older than 24 hours or more than 5 minutes
   ahead is dropped.
-- Of `data`, only `action`, `category` and `platform` reach PostHog today,
-  with `twakeorg`, and the user is known by `twakeactor`. twake-user-activity
-  reads `data` with a strict schema and drops `data.properties` (with `view`
+- Of `data`, only `action`, `category` and `platform` reach PostHog today.
+  twake-user-activity reads `data` with a strict schema and drops `data.properties` (with `view`
   and `appVersion`) until it forwards them.
 - The exchange is declared as a durable topic exchange, as the bridge does, at
   the first publish. The bridge must have started once, or the exchange routes

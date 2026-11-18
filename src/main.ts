@@ -81,11 +81,9 @@ registerSfuGet(server, {
 registerAnalytics(server, {
   serverName: config.MATRIX_SERVER_NAME,
   openId,
-  directory,
   publisher: config.AMQP_URL
-    ? // The client logs each publish at info and its payload, mail included
-      // as twakeactor, at debug (linagora/rabbitmq-client#25): its warnings
-      // only. twakeactor is redacted by twake-node-telemetry (1.2.0).
+    ? // The client logs each publish at info and its payload at debug
+      // (linagora/rabbitmq-client#25): its warnings only.
       amqpPublisher(
         config.AMQP_URL,
         logger.child(
