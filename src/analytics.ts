@@ -3,7 +3,6 @@ import { RabbitMQClient } from '@linagora/rabbitmq-client'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import { type RateLimit, tokenOf } from './assistants.ts'
-import type { Directory, DirectoryEntry } from './directory.ts'
 import { corsFor, type HttpServer, matrixError, sendFailure } from './http.ts'
 import { type OpenId, openIdUser } from './openid.ts'
 
@@ -19,10 +18,6 @@ const MAX_SKEW_MS = 5 * 60_000
 const MAX_STRING = 200
 const MAX_EVENTS = 200
 
-/** Lookups kept this long, and no more than this many: a replica's own, unshared. */
-const CACHE_TTL_MS = 5 * 60_000
-const CACHE_SIZE = 10_000
-
 /** Publishes waiting for the broker: past this, an event is dropped, as losing one is harmless. */
 const MAX_PENDING = 1000
 
@@ -36,7 +31,6 @@ export interface AnalyticsDeps {
   /** The homeserver whose users are served. */
   serverName: string
   openId: Pick<OpenId, 'userOf'>
-  directory: Pick<Directory, 'entry'>
   /** None when the deployment publishes no analytics: the route answers 202 and does nothing. */
   publisher: Publisher | null
   /** The batches of each user: a 429 past it drops that user's batch only. */
@@ -106,7 +100,6 @@ const cors = corsFor(
  * data. Answers 202 whatever becomes of the events.
  */
 export function registerAnalytics(app: HttpServer, deps: AnalyticsDeps): void {
-  const lookups = new Lookups(deps.directory, deps.now)
   let pending = 0
   /** Dropped since the last warning: a broker down for good never lets the backlog drain. */
   let lost = 0
@@ -172,85 +165,44 @@ export function registerAnalytics(app: HttpServer, deps: AnalyticsDeps): void {
     const dropped = parsed.data.events.length - events.length
     if (dropped > 0)
       request.log.warn({ user, dropped }, 'analytics events dropped')
-    // Not awaited: the answer never waits for the directory or the broker.
-    void (async () => {
-      const entry = await lookups.of(localpart)
-      if (!entry.email) {
-        request.log.debug({ user }, 'analytics skipped: no mail')
-        return
+    // Not awaited: the answer never waits for the broker.
+    // Anonymous: the event carries nothing of the user.
+    for (const [index, event] of events.entries()) {
+      if (pending >= MAX_PENDING) {
+        lost += events.length - index
+        break
       }
-      for (const [index, event] of events.entries()) {
-        if (pending >= MAX_PENDING) {
-          lost += events.length - index
-          return
-        }
-        const id = randomUUID()
-        pending += 1
-        publisher
-          .publish(
-            TYPE,
-            {
-              specversion: '1.0',
-              id,
-              source: 'twake://chat',
-              type: TYPE,
-              time: event.at,
-              twakeactor: entry.email,
-              ...(entry.actorId && { twakeactorid: entry.actorId }),
-              ...(entry.org && { twakeorg: entry.org }),
-              data: {
-                category: 'foreground',
-                action: event.name,
-                platform: 'web',
-                properties: {
-                  ...scalars(event.properties),
-                  ...(event.view && { view: event.view }),
-                  appVersion: parsed.data.version
-                }
+      const id = randomUUID()
+      pending += 1
+      publisher
+        .publish(
+          TYPE,
+          {
+            specversion: '1.0',
+            id,
+            source: 'twake://chat',
+            type: TYPE,
+            time: event.at,
+            data: {
+              category: 'foreground',
+              action: event.name,
+              platform: 'web',
+              properties: {
+                ...scalars(event.properties),
+                ...(event.view && { view: event.view }),
+                appVersion: parsed.data.version
               }
-            },
-            id
-          )
-          .catch((err: unknown) => {
-            request.log.warn({ err, id }, 'analytics event lost')
-          })
-          .finally(() => {
-            pending -= 1
-          })
-      }
-    })().catch((err: unknown) => {
-      request.log.warn({ err, user }, 'analytics lookup failed')
-    })
+            }
+          },
+          id
+        )
+        .catch((err: unknown) => {
+          request.log.warn({ err, id }, 'analytics event lost')
+        })
+        .finally(() => {
+          pending -= 1
+        })
+    }
     return reply.code(202).send()
   })
-}
-
-/** The directory entries of the users, kept briefly: events come in bursts. */
-class Lookups {
-  readonly #directory: Pick<Directory, 'entry'>
-  readonly #now: () => number
-  readonly #entries = new Map<
-    string,
-    { at: number; entry: Promise<DirectoryEntry> }
-  >()
-
-  constructor(
-    directory: Pick<Directory, 'entry'>,
-    now: () => number = Date.now
-  ) {
-    this.#directory = directory
-    this.#now = now
-  }
-
-  of(localpart: string): Promise<DirectoryEntry> {
-    const now = this.#now()
-    const kept = this.#entries.get(localpart)
-    if (kept && now - kept.at < CACHE_TTL_MS) return kept.entry
-    if (this.#entries.size >= CACHE_SIZE) this.#entries.clear()
-    const entry = this.#directory.entry(localpart)
-    this.#entries.set(localpart, { at: now, entry })
-    // A failed lookup is not kept: the next batch asks again.
-    entry.catch(() => this.#entries.delete(localpart))
-    return entry
-  }
 }
