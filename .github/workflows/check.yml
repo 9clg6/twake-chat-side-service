@@ -25,7 +25,10 @@ jobs:
       - run: npm ci --no-fund
       # Moderate advisories pass until @sentry/node depends on glob 14.0.2 or later
       # (getsentry/sentry-javascript#25981): back to a plain npm audit then
-      - run: npm audit --audit-level=high
+      # High advisories only on what ships: picomatch (GHSA-fc5q-39xc-vjpf) has no
+      # patched release and comes through the dev tools alone: back to a plain
+      # `npm audit` once a fixed picomatch exists
+      - run: npm audit --omit=dev --audit-level=high
       - name: Start PostgreSQL for the tests
         run: |
           docker run -d --name postgres -p 5432:5432 \
