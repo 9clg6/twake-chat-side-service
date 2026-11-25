@@ -260,13 +260,15 @@ the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
   The `bot_` and `hermes_` accounts publish nothing.
 - Properties keep the flat values (text cut to 200 characters, number, boolean,
   null) and drop the nested ones; `view` and the version of the app join them as
-  `view` and `appVersion`, with `deployment`, the homeserver name, set by the
-  service after them. `visit`, a random UUID v4 of the body shared by the tabs
-  of a visit, goes to `data.visit`; another value is ignored, never a 400. An event older than 24 hours or more than 5 minutes
-  ahead is dropped.
-- Of `data`, only `action`, `category` and `platform` reach PostHog today.
-  twake-user-activity reads `data` with a strict schema and drops `data.properties` (with `view`
-  and `appVersion`) until it forwards them.
+  `view` and `appVersion`, then `deployment`, the homeserver name, set by the
+  service last so that it wins. An event older than 24 hours or more than 5
+  minutes ahead is dropped.
+- `visit`, a random UUID v4 of the body, the same in every tab of one browser
+  visit, goes to `data.visit`: twake-user-activity uses it as the PostHog
+  `distinct_id`, so funnels hold within a visit and nothing links two visits.
+  Another value is ignored, never a 400.
+- twake-user-activity 0.2.0 forwards `data.properties` to PostHog; an older
+  bridge drops them.
 - The exchange is declared as a durable topic exchange, as the bridge does, at
   the first publish. The bridge must have started once, or the exchange routes
   to no queue. Readiness does not depend on the broker.
