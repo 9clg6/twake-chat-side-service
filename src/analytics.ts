@@ -59,6 +59,8 @@ export function amqpPublisher(url: string, logger: Logger): Publisher {
 const body = z.object({
   app: z.string().min(1).max(64),
   version: z.string().min(1).max(64),
+  /** The random id of a visit: an invalid one is ignored, never a 400. */
+  visit: z.uuidv4().optional().catch(undefined),
   events: z.array(z.unknown()).max(MAX_EVENTS)
 })
 
@@ -97,7 +99,8 @@ const cors = corsFor(
  * `POST /analytics/events`: the events of Twake Chat of the user of an OpenID token,
  * published as CloudEvents on the exchange of twake-user-activity, which forwards them
  * to PostHog. The browser decides on the consent: the service cannot read the account
- * data. Answers 202 whatever becomes of the events.
+ * data. Answers 202 whatever becomes of the events. The CloudEvent carries the optional
+ * `visit` of the body (UUID v4) and the `deployment` (the homeserver) among its properties.
  */
 export function registerAnalytics(app: HttpServer, deps: AnalyticsDeps): void {
   let pending = 0
@@ -184,13 +187,16 @@ export function registerAnalytics(app: HttpServer, deps: AnalyticsDeps): void {
             type: TYPE,
             time: event.at,
             data: {
+              ...(parsed.data.visit && { visit: parsed.data.visit }),
               category: 'foreground',
               action: event.name,
               platform: 'web',
               properties: {
                 ...scalars(event.properties),
                 ...(event.view && { view: event.view }),
-                appVersion: parsed.data.version
+                appVersion: parsed.data.version,
+                // After the client properties: the server wins.
+                deployment: deps.serverName
               }
             }
           },

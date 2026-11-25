@@ -7,6 +7,8 @@ import { createServer } from './http.ts'
 
 const ALICE = '@alice:example.org'
 const NOW = Date.parse('2026-10-27T10:00:00Z')
+/** One visit of a browser: a random UUID (v4). */
+const VISIT = '3f2b8c1e-7d4a-4e9b-a6c2-1b5d9e0f7a83'
 const HEADERS = {
   authorization: 'Bearer openid',
   'x-matrix-server-name': 'example.org'
@@ -162,7 +164,8 @@ describe('POST /analytics/events', () => {
           room_kind: 'direct',
           count: 2,
           view: 'room',
-          appVersion: '1.2.3'
+          appVersion: '1.2.3',
+          deployment: 'example.org'
         }
       }
     })
@@ -174,7 +177,7 @@ describe('POST /analytics/events', () => {
   })
 
   it('publishes no actor, actor id, organization nor user id: the event alone', async () => {
-    await post(batch(EVENT))
+    await post({ ...batch(EVENT), visit: VISIT })
 
     await vi.waitFor(() => {
       expect(deps.publisher.publish).toHaveBeenCalled()
@@ -183,9 +186,94 @@ describe('POST /analytics/events', () => {
     for (const key of ['twakeactor', 'twakeactorid', 'twakeorg']) {
       expect(event).not.toHaveProperty(key)
     }
-    const text = JSON.stringify(event)
+    // The homeserver is the deployment, said once; nothing else of the user
+    const text = JSON.stringify(event).replace('"deployment":"example.org"', '')
     for (const trace of ['alice', 'example.org', 'uuid-alice', 'acme123']) {
       expect(text).not.toContain(trace)
+    }
+  })
+
+  it('tells the deployment on every event: the homeserver the service serves', async () => {
+    deps.openId.userOf.mockResolvedValue('@alice:tenant.example.org')
+    await post(
+      batch(EVENT, { ...EVENT, name: 'app_opened', properties: {} }),
+      { serverName: 'tenant.example.org' },
+      { ...HEADERS, 'x-matrix-server-name': 'tenant.example.org' }
+    )
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(2)
+    })
+    for (const [, event] of deps.publisher.publish.mock.calls) {
+      expect(event).toMatchObject({
+        data: { properties: { deployment: 'tenant.example.org' } }
+      })
+    }
+  })
+
+  it('keeps the deployment of the server over a client property of that name', async () => {
+    await post(
+      batch({ ...EVENT, properties: { ...EVENT.properties, deployment: 'x' } })
+    )
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1)
+    })
+    expect(deps.publisher.publish.mock.calls[0]?.[1]).toMatchObject({
+      data: { properties: { deployment: 'example.org' } }
+    })
+  })
+
+  it('puts the visit of the browser on every event of the batch', async () => {
+    const response = await post({
+      ...batch(EVENT, { ...EVENT, name: 'app_opened' }),
+      visit: VISIT
+    })
+
+    expect(response.statusCode).toBe(202)
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(2)
+    })
+    for (const [, event] of deps.publisher.publish.mock.calls) {
+      expect(event).toMatchObject({ data: { visit: VISIT } })
+    }
+  })
+
+  it('publishes without a visit when the batch has none', async () => {
+    expect((await post(batch(EVENT))).statusCode).toBe(202)
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1)
+    })
+    expect(deps.publisher.publish.mock.calls[0]?.[1]).not.toHaveProperty(
+      'data.visit'
+    )
+  })
+
+  it('accepts a batch with an invalid visit and publishes it without one', async () => {
+    const invalid = [
+      'not-a-uuid',
+      '',
+      42,
+      null,
+      { id: VISIT },
+      // A UUID, but not a random one (v1)
+      '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+      `${VISIT}x`
+    ]
+    for (const visit of invalid) {
+      deps.publisher.publish.mockClear()
+      const response = await post({ ...batch(EVENT), visit })
+
+      expect(response.statusCode, JSON.stringify(visit)).toBe(202)
+      await vi.waitFor(() => {
+        expect(deps.publisher.publish).toHaveBeenCalledTimes(1)
+      })
+      const event = deps.publisher.publish.mock.calls[0]?.[1]
+      expect(event, JSON.stringify(visit)).not.toHaveProperty('data.visit')
+      expect(event, JSON.stringify(visit)).toMatchObject({
+        data: { action: 'message_sent' }
+      })
     }
   })
 

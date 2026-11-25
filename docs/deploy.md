@@ -236,7 +236,7 @@ To serve them:
 ## Analytics
 
 `POST /analytics/events` takes the batches of events that Twake Chat collects
-(`{ app, version, events: [{ name, properties, view?, at }] }`, at most 200
+(`{ app, version, visit?, events: [{ name, properties, view?, at }] }`, at most 200
 events) and publishes each as a CloudEvent `com.twake.chat.user.active.v1` on
 the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
 
@@ -260,11 +260,15 @@ the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
   The `bot_` and `hermes_` accounts publish nothing.
 - Properties keep the flat values (text cut to 200 characters, number, boolean,
   null) and drop the nested ones; `view` and the version of the app join them as
-  `view` and `appVersion`. An event older than 24 hours or more than 5 minutes
-  ahead is dropped.
-- Of `data`, only `action`, `category` and `platform` reach PostHog today.
-  twake-user-activity reads `data` with a strict schema and drops `data.properties` (with `view`
-  and `appVersion`) until it forwards them.
+  `view` and `appVersion`, then `deployment`, the homeserver name, set by the
+  service last so that it wins. An event older than 24 hours or more than 5
+  minutes ahead is dropped.
+- `visit`, a random UUID v4 of the body, the same in every tab of one browser
+  visit, goes to `data.visit`: twake-user-activity uses it as the PostHog
+  `distinct_id`, so funnels hold within a visit and nothing links two visits.
+  Another value is ignored, never a 400.
+- twake-user-activity 0.2.0 forwards `data.properties` to PostHog; an older
+  bridge drops them.
 - The exchange is declared as a durable topic exchange, as the bridge does, at
   the first publish. The bridge must have started once, or the exchange routes
   to no queue. Readiness does not depend on the broker.
