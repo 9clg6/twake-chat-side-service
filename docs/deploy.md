@@ -236,7 +236,7 @@ To serve them:
 ## Analytics
 
 `POST /analytics/events` takes the batches of events that Twake Chat collects
-(`{ app, version, events: [{ name, properties, view?, at }] }`, at most 200
+(`{ app, version, visit?, events: [{ name, properties, view?, at }] }`, at most 200
 events) and publishes each as a CloudEvent `com.twake.chat.user.active.v1` on
 the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
 
@@ -260,7 +260,9 @@ the `user-activity` exchange, where twake-user-activity forwards it to PostHog.
   The `bot_` and `hermes_` accounts publish nothing.
 - Properties keep the flat values (text cut to 200 characters, number, boolean,
   null) and drop the nested ones; `view` and the version of the app join them as
-  `view` and `appVersion`. An event older than 24 hours or more than 5 minutes
+  `view` and `appVersion`, with `deployment`, the homeserver name, set by the
+  service after them. `visit`, a random UUID v4 of the body shared by the tabs
+  of a visit, goes to `data.visit`; another value is ignored, never a 400. An event older than 24 hours or more than 5 minutes
   ahead is dropped.
 - Of `data`, only `action`, `category` and `platform` reach PostHog today.
   twake-user-activity reads `data` with a strict schema and drops `data.properties` (with `view`
