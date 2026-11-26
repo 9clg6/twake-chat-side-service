@@ -87,6 +87,30 @@ const batch = (...events: unknown[]) => ({
   events
 })
 
+/** One service kept across several batches, with the warnings it logs. */
+function service() {
+  const lines: { msg: string; dropped?: number }[] = []
+  const server = createServer({
+    logger: pino(
+      { level: 'warn' },
+      {
+        write: line =>
+          void lines.push(JSON.parse(line) as (typeof lines)[number])
+      }
+    ),
+    isReady: () => Promise.resolve(true)
+  })
+  registerAnalytics(server, { ...deps, directory } as AnalyticsDeps)
+  const send = (count: number) =>
+    server.inject({
+      method: 'POST',
+      url: '/analytics/events',
+      headers: HEADERS,
+      payload: batch(...Array.from({ length: count }, () => EVENT))
+    })
+  return { lines, send, server }
+}
+
 beforeEach(() => {
   deps = fakes()
   directory.entry.mockReset()
@@ -312,6 +336,73 @@ describe('POST /analytics/events', () => {
     })
   })
 
+  it('still publishes an event exactly a day old, or exactly five minutes ahead', async () => {
+    await post(
+      batch(
+        { ...EVENT, name: 'day_old', at: '2026-10-26T10:00:00Z' },
+        { ...EVENT, name: 'ahead', at: '2026-10-27T10:05:00Z' }
+      )
+    )
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(2)
+    })
+    expect(
+      deps.publisher.publish.mock.calls.map(([, event]) => event)
+    ).toMatchObject([
+      { data: { action: 'day_old' } },
+      { data: { action: 'ahead' } }
+    ])
+  })
+
+  it('warns of a single dropped event, with its count', async () => {
+    const { lines, server } = service()
+    await server.inject({
+      method: 'POST',
+      url: '/analytics/events',
+      headers: HEADERS,
+      payload: batch('nope', EVENT)
+    })
+
+    expect(lines).toMatchObject([
+      { msg: 'analytics events dropped', dropped: 1 }
+    ])
+  })
+
+  it('publishes again once the backlog of the broker has drained', async () => {
+    const { send } = service()
+    for (let i = 0; i < 5; i += 1) await send(200)
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1000)
+    })
+    await new Promise(resolve => setImmediate(resolve))
+
+    await send(1)
+
+    await vi.waitFor(() => {
+      expect(deps.publisher.publish).toHaveBeenCalledTimes(1001)
+    })
+  })
+
+  it('counts only the events of a batch cut by a full backlog', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval'] })
+    try {
+      deps.publisher.publish.mockReturnValue(new Promise<void>(() => undefined))
+      const { lines, send } = service()
+      for (let i = 0; i < 4; i += 1) await send(200)
+      await send(199)
+      await send(3)
+      await vi.waitFor(() => {
+        expect(deps.publisher.publish).toHaveBeenCalledTimes(1000)
+      })
+
+      vi.advanceTimersByTime(60_000)
+      expect(lines).toMatchObject([{ dropped: 2 }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('publishes nothing for a bot', async () => {
     for (const bot of ['@bot_alice:example.org', '@hermes_demo:example.org']) {
       deps.openId.userOf.mockResolvedValue(bot)
@@ -361,27 +452,9 @@ describe('POST /analytics/events', () => {
   it('counts the dropped events once a minute, though the broker never comes back', async () => {
     vi.useFakeTimers({ toFake: ['setInterval'] })
     try {
-      const lines: { msg: string; dropped?: number }[] = []
-      const server = createServer({
-        logger: pino(
-          { level: 'warn' },
-          {
-            write: line =>
-              void lines.push(JSON.parse(line) as (typeof lines)[number])
-          }
-        ),
-        isReady: () => Promise.resolve(true)
-      })
       // A broker down for good: no publish ever settles
       deps.publisher.publish.mockReturnValue(new Promise<void>(() => undefined))
-      registerAnalytics(server, { ...deps, directory } as AnalyticsDeps)
-      const send = (count: number) =>
-        server.inject({
-          method: 'POST',
-          url: '/analytics/events',
-          headers: HEADERS,
-          payload: batch(...Array.from({ length: count }, () => EVENT))
-        })
+      const { lines, send } = service()
 
       for (let i = 0; i < 5; i += 1) await send(200)
       await send(3)
