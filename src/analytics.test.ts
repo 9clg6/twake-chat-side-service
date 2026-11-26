@@ -632,7 +632,7 @@ describe('POST /analytics/server-stats/:token', () => {
       ...deps,
       serverStatsToken: TOKEN,
       ...overrides
-    } as AnalyticsDeps)
+    })
     // Synapse sends no authorization header
     return server.inject({
       method: 'POST',
@@ -760,7 +760,7 @@ describe('POST /analytics/server-stats/:token', () => {
       registerAnalytics(server, {
         ...deps,
         serverStatsToken: TOKEN
-      } as AnalyticsDeps)
+      })
       const response = await server.inject({
         method: 'POST',
         url,
