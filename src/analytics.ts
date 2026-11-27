@@ -3,11 +3,16 @@ import { RabbitMQClient } from '@linagora/rabbitmq-client'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import { type RateLimit, tokenOf } from './assistants.ts'
-import { corsFor, type HttpServer, matrixError, sendFailure } from './http.ts'
+import {
+  corsFor,
+  type HttpServer,
+  matrixError,
+  STATS_PATH,
+  sendFailure
+} from './http.ts'
 import { type OpenId, openIdUser } from './openid.ts'
 
 export const ANALYTICS_PATH = '/analytics/events'
-const STATS_PATH = '/analytics/server-stats'
 
 const EXCHANGE = 'user-activity'
 const TYPE = 'com.twake.chat.user.active.v1'
