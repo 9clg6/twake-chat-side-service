@@ -803,4 +803,63 @@ describe('POST /analytics/server-stats/:token', () => {
     deps.publisher.publish.mockRejectedValue(new Error('down'))
     expect((await report(STATS)).statusCode).toBe(202)
   })
+
+  /** Every line the service logs while it serves `url`, at every level. */
+  async function logsOf(url: string, register = true) {
+    const lines: string[] = []
+    const server = createServer({
+      logger: pino(
+        { level: 'trace' },
+        { write: (line: string) => lines.push(line) }
+      ),
+      isReady: () => Promise.resolve(true)
+    })
+    if (register)
+      registerAnalytics(server, { ...deps, serverStatsToken: TOKEN })
+    const response = await server.inject({
+      method: 'POST',
+      url,
+      payload: STATS
+    })
+    return { status: response.statusCode, lines }
+  }
+
+  it('never writes the token in its logs', async () => {
+    const { status, lines } = await logsOf(`/analytics/server-stats/${TOKEN}`)
+
+    expect(status).toBe(202)
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) expect(line).not.toContain(TOKEN)
+    // The route stays recognisable in the logs
+    expect(lines.some(line => line.includes('/analytics/server-stats'))).toBe(
+      true
+    )
+  })
+
+  it('never writes a wrong token in its logs either', async () => {
+    const wrong = 'a-guess-that-is-almost-the-secret'
+    const { status, lines } = await logsOf(`/analytics/server-stats/${wrong}`)
+
+    expect(status).toBe(404)
+    expect(lines.length).toBeGreaterThan(0)
+    for (const line of lines) expect(line).not.toContain(wrong)
+  })
+
+  it('never writes the token when the deployment does not serve the route', async () => {
+    const { status, lines } = await logsOf(
+      `/analytics/server-stats/${TOKEN}`,
+      false
+    )
+
+    expect(status).toBe(404)
+    for (const line of lines) expect(line).not.toContain(TOKEN)
+  })
+
+  it('keeps the full url of the other routes in its logs', async () => {
+    const { lines } = await logsOf('/analytics/elsewhere/kept-in-the-logs')
+
+    expect(
+      lines.some(line => line.includes('/analytics/elsewhere/kept-in-the-logs'))
+    ).toBe(true)
+  })
 })
